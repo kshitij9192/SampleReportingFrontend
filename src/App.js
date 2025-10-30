@@ -28,82 +28,127 @@ function App() {
   const fetchAllData = async () => {
     try {
       setLoading(true);
+      setError(null);
       
       // Fetch data from all 4 APIs
       const responses = await Promise.all([
-        fetch(API_URLS.graph1).then(r => r.json()),
-        fetch(API_URLS.graph2).then(r => r.json()),
-        fetch(API_URLS.graph3).then(r => r.json()),
-        fetch(API_URLS.graph4).then(r => r.json())
+        fetch(API_URLS.graph1).then(r => {
+          if (!r.ok) throw new Error(`Graph1 API failed: ${r.statusText}`);
+          return r.json();
+        }),
+        fetch(API_URLS.graph2).then(r => {
+          if (!r.ok) throw new Error(`Graph2 API failed: ${r.statusText}`);
+          return r.json();
+        }),
+        fetch(API_URLS.graph3).then(r => {
+          if (!r.ok) throw new Error(`Graph3 API failed: ${r.statusText}`);
+          return r.json();
+        }),
+        fetch(API_URLS.graph4).then(r => {
+          if (!r.ok) throw new Error(`Graph4 API failed: ${r.statusText}`);
+          return r.json();
+        })
       ]);
+
+      console.log('API Responses:', responses);
 
       // Transform API data to match frontend structure
       const transformedData = transformApiData(responses);
       
+      console.log('Transformed Data:', transformedData);
+      
       setApiData(transformedData);
       
-      // Extract unique CIOs
+      // Extract unique CIOs from first graph data (should have all CIOs)
       const uniqueCios = [...new Set(responses[0].map(item => item.CIO))];
+      console.log('Unique CIOs:', uniqueCios);
+      
       setCios(uniqueCios);
       
-      setError(null);
     } catch (err) {
-      setError('Failed to fetch data from API');
-      console.error(err);
+      setError(`Failed to fetch data: ${err.message}`);
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
   const transformApiData = (apiResponses) => {
-    const [graph1Data, graph2Data, graph3Data, graph4Data] = apiResponses;
-    
-    // Build structure: { cio: { owner: { months: [], graph1: [], graph2: [], graph3: [], graph4: [] } } }
-    const structured = {};
-
-    // Process each graph's data
-    [graph1Data, graph2Data, graph3Data, graph4Data].forEach((graphData, graphIndex) => {
-      const graphKey = `graph${graphIndex + 1}`;
+    try {
+      const [graph1Data, graph2Data, graph3Data, graph4Data] = apiResponses;
       
-      graphData.forEach(item => {
-        const cio = item.CIO;
-        const owner = item.Portfolio_Owner;
-        const period = item.Period;
-        const value = item.Value;
+      // Validate that data is arrays
+      if (!Array.isArray(graph1Data) || !Array.isArray(graph2Data) || 
+          !Array.isArray(graph3Data) || !Array.isArray(graph4Data)) {
+        throw new Error('API response is not an array');
+      }
 
-        // Initialize CIO if not exists
-        if (!structured[cio]) {
-          structured[cio] = {};
-        }
+      // Build structure: { cio: { owner: { months: [], graph1: [], graph2: [], graph3: [], graph4: [] } } }
+      const structured = {};
 
-        // Initialize owner if not exists
-        if (!structured[cio][owner]) {
-          structured[cio][owner] = {
-            months: [],
-            graph1: [],
-            graph2: [],
-            graph3: [],
-            graph4: []
-          };
-        }
+      // Create a map to track periods for each owner
+      const ownerPeriodMap = {};
 
-        // Add month if not exists
-        if (!structured[cio][owner].months.includes(period)) {
-          structured[cio][owner].months.push(period);
-        }
+      // Process each graph's data
+      [graph1Data, graph2Data, graph3Data, graph4Data].forEach((graphData, graphIndex) => {
+        const graphKey = `graph${graphIndex + 1}`;
+        
+        graphData.forEach(item => {
+          const cio = item.CIO?.toLowerCase() || 'unknown';
+          const owner = item.Portfolio_Owner?.toLowerCase() || 'unknown';
+          const period = item.Period || 'Unknown';
+          const value = parseFloat(item.Value) || 0;
 
-        // Add value to corresponding graph
-        structured[cio][owner][graphKey].push(value);
+          // Initialize CIO if not exists
+          if (!structured[cio]) {
+            structured[cio] = {};
+          }
+
+          // Initialize owner if not exists
+          if (!structured[cio][owner]) {
+            structured[cio][owner] = {
+              months: [],
+              graph1: [],
+              graph2: [],
+              graph3: [],
+              graph4: []
+            };
+          }
+
+          // Track unique periods for this owner
+          const ownerKey = `${cio}|${owner}`;
+          if (!ownerPeriodMap[ownerKey]) {
+            ownerPeriodMap[ownerKey] = new Set();
+          }
+          ownerPeriodMap[ownerKey].add(period);
+
+          // Add value to corresponding graph
+          structured[cio][owner][graphKey].push(value);
+        });
       });
-    });
 
-    return structured;
+      // Set months for each owner based on their periods
+      Object.keys(structured).forEach(cio => {
+        Object.keys(structured[cio]).forEach(owner => {
+          const ownerKey = `${cio}|${owner}`;
+          if (ownerPeriodMap[ownerKey]) {
+            structured[cio][owner].months = Array.from(ownerPeriodMap[ownerKey]).sort();
+          }
+        });
+      });
+
+      return structured;
+    } catch (err) {
+      console.error('Data transformation error:', err);
+      throw err;
+    }
   };
 
   const handleCioChange = async (cioName) => {
-    if (!cioName) {
+    if (!cioName || !apiData) {
       setSelectedCio('');
       setOwners([]);
+      setMonths([]);
       return;
     }
 
@@ -112,16 +157,22 @@ function App() {
       setSelectedCio(cioName);
       
       // Get owners for selected CIO from transformed data
-      const cioOwners = Object.keys(apiData[cioName] || {});
+      const cioData = apiData[cioName.toLowerCase()];
+      if (!cioData) {
+        setOwners([]);
+        setMonths([]);
+        return;
+      }
+
+      const cioOwners = Object.keys(cioData);
       setOwners(cioOwners);
       
       // Get months from first owner (assuming all owners have same months)
       if (cioOwners.length > 0) {
-        const firstOwner = apiData[cioName][cioOwners[0]];
-        setMonths(firstOwner.months);
+        const firstOwner = cioData[cioOwners[0]];
+        setMonths(firstOwner.months || []);
       }
       
-      setError(null);
     } catch (err) {
       setError('Failed to fetch owners');
       console.error(err);
@@ -172,9 +223,9 @@ function App() {
         )}
 
         <Dashboard
-          cios={cios}
+          cios={cios || []}
           selectedCio={selectedCio}
-          owners={owners}
+          owners={owners || []}
           loading={loading}
           onCioChange={handleCioChange}
           onOwnerClick={handleOwnerClick}
@@ -185,7 +236,7 @@ function App() {
             cio={selectedCio}
             owner={selectedOwner}
             months={months}
-            ownerData={apiData[selectedCio][selectedOwner]}
+            ownerData={apiData[selectedCio.toLowerCase()] && apiData[selectedCio.toLowerCase()][selectedOwner]}
             onClose={closeModal}
             onNavigate={navigateOwner}
             currentIndex={owners.indexOf(selectedOwner)}
