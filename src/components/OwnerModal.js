@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -81,9 +81,9 @@ const getChartOptions = (threshold, minVal) => {
       datalabels: {
         anchor: 'end',
         align: 'start',
-        offset: -25,
+        offset: 16,
         color: '#2563eb',
-        font: { weight: 'bold', size: 11 },
+        font: { weight: 'bold', size: 14 },
         formatter: value => value.toFixed(1),
         display: true
       },
@@ -151,28 +151,9 @@ const getChartOptions = (threshold, minVal) => {
 };
 
 const OwnerModal = ({
-  cio, owner, months, onClose, onNavigate, currentIndex, totalOwners
+  cio, owner, months, ownerData, onClose, onNavigate, currentIndex, totalOwners
 }) => {
-  const [ownerData, setOwnerData] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchOwnerData = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`http://localhost:5000/api/cio/${cio}/owner/${owner}`);
-        const data = await response.json();
-        setOwnerData(data);
-      } catch (err) {
-        console.error('Failed to fetch owner data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchOwnerData();
-  }, [cio, owner]);
-
-  if (loading || !ownerData) {
+  if (!ownerData) {
     return (
       <div className="modal-overlay">
         <div className="modal-content">
@@ -188,7 +169,6 @@ const OwnerModal = ({
   return (
     <div className="modal-overlay">
       <div className="modal-content owner-modal-improved">
-        {/* Header & Close */}
         <div className="modal-header improved-header">
           <div className="header-info">
             <h2 className="modal-title">
@@ -204,12 +184,11 @@ const OwnerModal = ({
           </button>
         </div>
 
-        {/* 2x2 grid of line graphs */}
         <div className="charts-grid improved-grid">
           {METRIC_TO_KPI.map((metric) => {
-            const minVal = getMinValue(ownerData.data[metric.graphKey]);
-            const actual = getLastValue(ownerData.data[metric.graphKey]);
-            const delta = getDelta(ownerData.data[metric.graphKey]);
+            const minVal = getMinValue(ownerData[metric.graphKey]);
+            const actual = getLastValue(ownerData[metric.graphKey]);
+            const delta = getDelta(ownerData[metric.graphKey]);
             return (
               <div className="chart-wrapper" key={metric.label}>
                 <div className="chart-title-bar">
@@ -222,7 +201,7 @@ const OwnerModal = ({
                       datasets: [
                         {
                           label: metric.label,
-                          data: ownerData.data[metric.graphKey],
+                          data: ownerData[metric.graphKey],
                           borderColor: skyBlue,
                           backgroundColor: `${skyBlue}15`,
                           borderWidth: 3,
@@ -250,7 +229,6 @@ const OwnerModal = ({
           })}
         </div>
 
-        {/* Footer nav */}
         <div className="modal-footer improved-footer">
           <button
             className="nav-button prev-button"
