@@ -3,6 +3,7 @@ import './App.css';
 import Dashboard from './components/Dashboard';
 import OwnerModal from './components/OwnerModal';
 
+const division = 'RFT'; // <-- hardcoded division you want to filter by
 const ownerApiUrl = 'https://yourapi.com/owner'; // Replace with your owner API URL
 const graphApiUrls = {
   graph1: 'https://yourapi.com/graph1',
@@ -12,95 +13,68 @@ const graphApiUrls = {
 };
 
 function App() {
-  const [infoVisible, setInfoVisible] = useState(true);
-  const [divisions, setDivisions] = useState([]);
-  const [selectedDivision, setSelectedDivision] = useState('');
   const [cios, setCios] = useState([]);
   const [selectedCio, setSelectedCio] = useState('');
   const [owners, setOwners] = useState([]);
   const [selectedOwner, setSelectedOwner] = useState(null);
   const [ownerGraphs, setOwnerGraphs] = useState(null);
-  const [loadingGraphs, setLoadingGraphs] = useState(false);
   const [months, setMonths] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // Fetch all owner API data, process divisions and CIOs
+  // Fetch and filter CIOs for your hardcoded division
   useEffect(() => {
     fetchOwners();
   }, []);
+
+  const [ownersData, setOwnersData] = useState([]);
 
   const fetchOwners = async () => {
     try {
       const response = await fetch(ownerApiUrl);
       const data = await response.json();
 
-      // Extract unique divisions
-      const uniqueDivisions = [...new Set(data.map(item => item.Division))];
-      setDivisions(uniqueDivisions);
-
-      // Save full owner data for filtering later
+      // Filter all owners for your hardcoded division
       setOwnersData(data);
+
+      // Extract CIOs under given division
+      const ciosFiltered = [...new Set(data.filter(o => o.Division === division).map(o => o.CIO))];
+      setCios(ciosFiltered);
     } catch (e) {
       console.error('Error fetching owner data:', e);
     }
   };
 
-  const [ownersData, setOwnersData] = useState([]);
-
-  const handleDivisionChange = (division) => {
-    setSelectedDivision(division);
-    setSelectedCio('');
-    setOwners([]);
-
-    // Filter CIOs for selected division
-    if (division) {
-      const ciosInDivision = [...new Set(
-        ownersData.filter(o => o.Division === division).map(o => o.CIO)
-      )];
-      setCios(ciosInDivision);
-    } else {
-      setCios([]);
-    }
-  };
-
-  const handleCioChange = (cio) => {
+  const handleCioChange = async (cio) => {
     setSelectedCio(cio);
     setOwners([]);
-
     if (cio) {
-      // Filter owners for selected Division and CIO
-      const ownersList = ownersData
-        .filter(o => o.Division === selectedDivision && o.CIO === cio)
+      const filteredOwners = ownersData
+        .filter(o => o.Division === division && o.CIO === cio)
         .map(o => o.Portfolio_Owner);
-      const uniqueOwners = [...new Set(ownersList)];
+      const uniqueOwners = [...new Set(filteredOwners)];
       setOwners(uniqueOwners);
     }
   };
 
-  // Fetch all four graph data for owner
   const fetchGraphsForOwner = async (owner) => {
-    setLoadingGraphs(true);
-
+    setLoading(true);
     try {
-      const allResponses = await Promise.all(Object.values(graphApiUrls).map(async (url) => {
-        const response = await fetch(`${url}?owner=${owner}`);
-        const data = await response.json();
-        return data;
-      }));
+      const allResponses = await Promise.all(
+        Object.values(graphApiUrls).map(async (url) => {
+          const resp = await fetch(`${url}?owner=${owner}`);
+          const jsonData = await resp.json();
+          return jsonData;
+        })
+      );
 
-      // allResponses is array of graph data arrays for this owner
-      // Process weeks/months dynamically from data
       const periodsSet = new Set();
-
       allResponses.forEach(graphData => {
         graphData.forEach(point => periodsSet.add(point.Period));
       });
-
       const periodsArray = Array.from(periodsSet);
-      periodsArray.sort((a,b) => new Date(a) - new Date(b)); // Sort ascending by date string
+      periodsArray.sort((a,b) => new Date(a) - new Date(b));
+      setMonths(periodsArray.slice(-6));
 
-      setMonths(periodsArray.slice(-6)); // last 6 months
-
-      // Now prepare graph values per API in order
       const graphsData = {};
       Object.keys(graphApiUrls).forEach((graphKey, index) => {
         let graphPoints = [];
@@ -118,7 +92,7 @@ function App() {
     } catch (e) {
       console.error('Error fetching graph data:', e);
     } finally {
-      setLoadingGraphs(false);
+      setLoading(false);
     }
   };
 
@@ -130,61 +104,48 @@ function App() {
 
   return (
     <div className="App">
-      {infoVisible && (
-        <section className="info-section">
-          <h1>Data Visualization Dashboard</h1>
-          <p>We visualize owner performances under Divisions and CIOs with interactive graphs.</p>
-          <button onClick={() => setInfoVisible(false)}>Start</button>
-        </section>
-      )}
+      <header className="app-header">
+        <h1>Data Visualization Dashboard</h1>
+        <p>Visualizing owners under Division "{division}" and CIOs.</p>
+      </header>
 
-      {!infoVisible && (
-        <section className="selection-section">
-          <div className="selector">
-            <label>Division:</label>
-            <select value={selectedDivision} onChange={e => handleDivisionChange(e.target.value)}>
-              <option value="">Select Division</option>
-              {divisions.map(div => <option key={div} value={div}>{div}</option>)}
-            </select>
+      <main className="main-content">
+        <div>
+          <label htmlFor="cio-select">Select CIO:</label>
+          <select
+            id="cio-select"
+            value={selectedCio}
+            onChange={e => handleCioChange(e.target.value)}
+          >
+            <option value="">-- Select CIO --</option>
+            {cios.map(cio => (
+              <option key={cio} value={cio}>{cio}</option>
+            ))}
+          </select>
+        </div>
+
+        {owners.length > 0 && (
+          <div className="owners-list">
+            {owners.map(owner => (
+              <button key={owner} onClick={() => fetchGraphsForOwner(owner)}>
+                {owner}
+              </button>
+            ))}
           </div>
+        )}
 
-          {cios.length > 0 && (
-            <div className="selector">
-              <label>CIO:</label>
-              <select value={selectedCio} onChange={e => handleCioChange(e.target.value)}>
-                <option value="">Select CIO</option>
-                {cios.map(cio => <option key={cio} value={cio}>{cio}</option>)}
-              </select>
-            </div>
-          )}
+        {selectedOwner && ownerGraphs && !loading && (
+          <OwnerModal
+            cio={selectedCio}
+            owner={selectedOwner}
+            months={months}
+            ownerData={ownerGraphs}
+            onClose={closeModal}
+          />
+        )}
 
-          {owners.length > 0 && (
-            <div className="owners-list">
-              {owners.map(owner => (
-                <button 
-                  key={owner} 
-                  className="owner-button" 
-                  onClick={() => fetchGraphsForOwner(owner)}
-                >
-                  {owner}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {selectedOwner && ownerGraphs && !loadingGraphs && (
-        <OwnerModal 
-          cio={selectedCio} 
-          owner={selectedOwner} 
-          months={months} 
-          ownerData={ownerGraphs} 
-          onClose={closeModal} 
-        />
-      )}
-
-      {loadingGraphs && <div className="loading">Loading graphs...</div>}
+        {loading && <p>Loading graphs...</p>}
+      </main>
     </div>
   );
 }
