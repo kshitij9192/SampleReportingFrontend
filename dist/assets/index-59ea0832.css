@@ -1,0 +1,1 @@
+import React from "react"; function App(){return (<div className="App"> <header className="app-header"> <h1>Test React App</h1> <p>This is a simple hardcoded app component for testing Vite build.</p> </header> </div>)}export default App;{}
